@@ -1,0 +1,13 @@
+# Build-Artefakte
+lib/
+vendor/litehtml/
+vendor/litehtml-build/
+
+# Editor
+*.bak
+*~
+.#*
+\#*#
+
+# Privates Verzeichnis
+**nogit/

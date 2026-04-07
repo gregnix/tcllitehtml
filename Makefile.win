@@ -1,0 +1,84 @@
+# Makefile.win -- tcllitehtml für Windows/BAWT
+#
+# Voraussetzungen:
+#   BAWT 3.2+ mit Tcl 8.6 oder 9.0
+#   MinGW-w64 gcc (aus BAWT)
+#   cmake (aus BAWT oder separat)
+#
+# Aufruf (aus BAWT Shell oder MinGW-Terminal):
+#   make -f Makefile.win
+#   make -f Makefile.win TCL_VER=9.0
+
+TCL_VER    ?= 8.6
+BAWT_ROOT  ?= C:/BAWT
+
+ifeq ($(TCL_VER),9.0)
+  TCL_DIR  = $(BAWT_ROOT)/Tcl9.0
+else
+  TCL_DIR  = $(BAWT_ROOT)/Tcl8.6
+endif
+
+TCL_INC    = $(TCL_DIR)/include
+TK_INC     = $(TCL_DIR)/include
+TCL_LIB    = $(TCL_DIR)/lib
+TCL_STUB   = tclstub$(TCL_VER)
+TK_STUB    = tkstub$(TCL_VER)
+TCLSH      = $(TCL_DIR)/bin/tclsh$(TCL_VER)
+CMAKE      = cmake
+
+CC         = g++
+OUT        = lib/libtcllitehtml.dll
+
+LITEHTML       = vendor/litehtml
+LITEHTML_BUILD = vendor/litehtml-build
+LITEHTML_LIB   = $(LITEHTML_BUILD)/liblitehtml.a
+GUMBO_LIB      = $(LITEHTML_BUILD)/src/gumbo/libgumbo.a
+
+CBASE = -shared -fPIC -Wall -O2 -std=c++17 \
+        -I$(TCL_INC) -I$(TK_INC) -Isrc \
+        -Ivendor/litehtml/include \
+        -DUSE_TCL_STUBS -DUSE_TK_STUBS \
+        -DWIN32 -D_WIN32
+
+.PHONY: all clean litehtml-build litehtml
+
+all: check-vendor litehtml-build $(OUT)
+
+check-vendor:
+	@test -d $(LITEHTML)/include || \
+	  (echo "FEHLT: vendor/litehtml/ — bitte 'make -f Makefile.win litehtml'" && exit 1)
+
+litehtml-build: $(LITEHTML_LIB)
+
+$(LITEHTML_LIB): $(LITEHTML)/CMakeLists.txt
+	@mkdir -p $(LITEHTML_BUILD)
+	cd $(LITEHTML_BUILD) && $(CMAKE) \
+	    -G "MinGW Makefiles" \
+	    -DCMAKE_BUILD_TYPE=Release \
+	    -DBUILD_SHARED_LIBS=OFF \
+	    -DLITEHTML_BUILD_TESTING=OFF \
+	    -DCMAKE_CXX_FLAGS="-fPIC" \
+	    -DCMAKE_C_FLAGS="-fPIC" \
+	    ../litehtml
+	$(MAKE) -C $(LITEHTML_BUILD) litehtml
+	@echo "Built: $(LITEHTML_LIB)"
+
+$(OUT): src/tcllitehtml.cpp src/container_tk.cpp $(LITEHTML_LIB)
+	@mkdir -p lib
+	$(CC) $(CBASE) \
+	    -o $@ \
+	    src/tcllitehtml.cpp src/container_tk.cpp \
+	    $(LITEHTML_LIB) \
+	    $(GUMBO_LIB) \
+	    -L$(TCL_LIB) \
+	    -l$(TCL_STUB) -l$(TK_STUB) \
+	    -lm -lws2_32
+	@echo "Built: $@"
+
+litehtml:
+	@mkdir -p vendor
+	git clone --depth=1 https://github.com/litehtml/litehtml vendor/litehtml
+
+clean:
+	rm -f $(OUT)
+	rm -rf $(LITEHTML_BUILD)

@@ -1,0 +1,12 @@
+--- a/src/web_color.cpp
++++ b/src/web_color.cpp
+@@ -388,7 +388,9 @@ string resolve_name(const string& name, document_container* container)
+
+-	if (container)
+-		return container->resolve_color(name);
+-
++	// Removed: container->resolve_color() call causes recursion crash on Windows.
++	// litehtml passes non-color CSS values (underline, initial, inherit etc.)
++	// tcllitehtml does not need custom color name support.
++
+ 	return "";
