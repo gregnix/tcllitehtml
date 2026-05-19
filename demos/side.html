@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>TclLiteHTML Test</title>
+
+<style>
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f0f0f0;
+    color: #222;
+    margin: 20px;
+}
+
+h1 {
+    color: #004080;
+    border-bottom: 3px solid #004080;
+    padding-bottom: 5px;
+}
+
+h2 {
+    color: #0060a0;
+    margin-top: 30px;
+}
+
+.box {
+    background: white;
+    border: 1px solid #999;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 8px;
+}
+
+.red {
+    color: red;
+}
+
+.green {
+    color: green;
+}
+
+.bluebg {
+    background: #d0e8ff;
+}
+
+#special {
+    border: 2px dashed orange;
+    padding: 8px;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+th {
+    background: #004080;
+    color: white;
+}
+
+td, th {
+    border: 1px solid #666;
+    padding: 6px;
+}
+
+ul.square {
+    list-style-type: square;
+}
+
+.code {
+    font-family: monospace;
+    background: #eeeeee;
+    padding: 2px 4px;
+}
+
+pre {
+    background: #202020;
+    color: #00ff80;
+    padding: 10px;
+    overflow: auto;
+}
+
+a {
+    color: #0060c0;
+    text-decoration: none;
+}
+
+a:hover {
+    color: red;
+    text-decoration: underline;
+}
+
+.row {
+    margin-top: 10px;
+}
+
+.inlinebox {
+    display: inline-block;
+    width: 120px;
+    height: 60px;
+    margin-right: 10px;
+    text-align: center;
+    line-height: 60px;
+    border: 1px solid #444;
+    background: #fafafa;
+}
+
+.formrow {
+    margin-top: 10px;
+}
+
+input, select, textarea, button {
+    padding: 4px;
+    border: 1px solid #888;
+}
+
+.note {
+    font-size: 0.9em;
+    color: #666;
+}
+</style>
+
+</head>
+
+<body>
+
+<h1>TclLiteHTML Test Page</h1>
+
+<div class="box">
+    Dies ist eine Testseite fuer HTML + CSS Rendering.
+</div>
+
+<h2>Textformatierung</h2>
+
+<div class="box">
+    Normaler Text<br>
+    <b>Fetter Text</b><br>
+    <i>Kursiver Text</i><br>
+    <u>Unterstrichener Text</u><br>
+    <span class="red">Roter Text</span><br>
+    <span class="green">Gruener Text</span><br>
+    <span class="code">Inline Code</span>
+</div>
+
+<h2>Listen</h2>
+
+<div class="box">
+
+<ul class="square">
+    <li>Eintrag 1</li>
+    <li>Eintrag 2</li>
+    <li>Eintrag 3</li>
+</ul>
+
+<ol>
+    <li>Nummer 1</li>
+    <li>Nummer 2</li>
+    <li>Nummer 3</li>
+</ol>
+
+</div>
+
+<h2>Tabelle</h2>
+
+<div class="box">
+
+<table>
+<tr>
+    <th>Name</th>
+    <th>Ort</th>
+    <th>Status</th>
+</tr>
+
+<tr>
+    <td>Gregor</td>
+    <td>Vreden</td>
+    <td>OK</td>
+</tr>
+
+<tr>
+    <td>Tcl</td>
+    <td>Linux</td>
+    <td>Test</td>
+</tr>
+
+</table>
+
+</div>
+
+<h2>Boxmodell</h2>
+
+<div class="box bluebg">
+    Hintergrund + Padding + Margin
+</div>
+
+<div id="special">
+    ID Selektor mit gestricheltem Rahmen
+</div>
+
+<h2>Inline-Block Elemente</h2>
+
+<div class="row">
+    <div class="inlinebox">A</div>
+    <div class="inlinebox">B</div>
+    <div class="inlinebox">C</div>
+</div>
+
+<h2>Links</h2>
+
+<div class="box">
+    <a href="https://www.tcl-lang.org/">Tcl Webseite</a><br>
+    <a href="https://core.tcl-lang.org/tkhtml/">Tkhtml</a>
+</div>
+
+<h2>PRE / CODE</h2>
+
+<pre>
+proc hello {} {
+    puts "Hello Tcl"
+}
+</pre>
+
+<h2>Formulare</h2>
+
+<div class="box">
+
+<div class="formrow">
+    Name:
+    <input type="text" value="Test">
+</div>
+
+<div class="formrow">
+    Auswahl:
+    <select>
+        <option>Eintrag 1</option>
+        <option>Eintrag 2</option>
+    </select>
+</div>
+
+<div class="formrow">
+    <input type="checkbox"> Checkbox
+</div>
+
+<div class="formrow">
+    <button>Button</button>
+</div>
+
+<div class="formrow">
+<textarea rows="4" cols="40">
+Mehrzeiliger Text
+</textarea>
+</div>
+
+</div>
+
+<h2>SVG Bild (Data URI)</h2>
+
+<div class="box">
+
+<img width="120" height="120"
+src="data:image/svg+xml,
+<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'>
+<rect x='10' y='10' width='100' height='100'
+fill='lightblue' stroke='navy' stroke-width='4'/>
+<circle cx='60' cy='60' r='30'
+fill='orange'/>
+</svg>">
+
+</div>
+
+<p class="note">
+Ende der Testseite.
+</p>
+
+</body>
+</html>

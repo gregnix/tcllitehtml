@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>TclLiteHTML UTF-8 und Layout-Test</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background: #f4f4f4;
+}
+
+section {
+    background: white;
+    border: 1px solid #999;
+    margin-bottom: 20px;
+    padding: 12px;
+}
+
+.outer {
+    border: 2px solid #004080;
+    padding: 10px;
+    background: #e8f2ff;
+}
+
+.middle {
+    border: 2px solid #008000;
+    padding: 10px;
+    margin: 8px;
+    background: #eefdee;
+}
+
+.inner {
+    border: 2px solid #aa6600;
+    padding: 10px;
+    margin: 8px;
+    background: #fff4dd;
+}
+
+.float-left {
+    float: left;
+    width: 160px;
+    margin: 0 15px 10px 0;
+    padding: 10px;
+    background: #ffe0e0;
+    border: 1px solid #aa0000;
+}
+
+.clear {
+    clear: both;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+}
+
+th {
+    background: #004080;
+    color: white;
+}
+
+td, th {
+    border: 1px solid #777;
+    padding: 4px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>TclLiteHTML Zusatztest</h1>
+
+<section>
+<h2>UTF-8 / Umlaute</h2>
+<p>
+ÄÖÜ äöü ß € „deutsche Anführungszeichen“ – Gedankenstrich — langer Strich
+</p>
+<p>
+Müller, Schröder, Größe, Straße, Büro, Café, naïve, déjà-vu
+</p>
+<p>
+Sonderzeichen: © ® ™ µ ½ ¼ ¾ ± × ÷
+</p>
+</section>
+
+<section>
+<h2>Verschachtelte DIVs</h2>
+
+<div class="outer">
+    Outer DIV
+    <div class="middle">
+        Middle DIV
+        <div class="inner">
+            Inner DIV mit <b>fetter Schrift</b>, <i>kursiver Schrift</i> und Umlauten: äöüß.
+        </div>
+    </div>
+</div>
+
+</section>
+
+<section>
+<h2>Float-Test</h2>
+
+<div class="float-left">
+    Float links<br>
+    Breite 160px
+</div>
+
+<p>
+Dieser Text sollte rechts neben der Float-Box laufen. Danach sollte er unterhalb
+weitergehen, wenn nicht mehr genug Platz vorhanden ist. Damit kann man testen,
+ob TclLiteHTML float, margin und Textumfluss korrekt behandelt.
+</p>
+
+<div class="clear"></div>
+
+<p>Dieser Absatz steht nach <code>clear: both</code>.</p>
+
+</section>
+
+<section>
+<h2>Externe Bilder</h2>
+
+<p>SVG extern:</p>
+<img src="img/test.svg" width="160" height="100" alt="SVG Test">
+
+<p>PNG extern:</p>
+<img src="img/test.png" width="160" height="100" alt="PNG Test">
+
+<p>JPEG extern:</p>
+<img src="img/test.jpg" width="160" height="100" alt="JPEG Test">
+
+</section>
+
+<section>
+<h2>Große Tabelle</h2>
+
+<table>
+<tr>
+<th>Nr</th>
+<th>Name</th>
+<th>Ort</th>
+<th>Text</th>
+<th>Status</th>
+</tr>
+
+<tr><td>001</td><td>Müller</td><td>Köln</td><td>UTF-8 äöüß €</td><td>OK</td></tr>
+<tr><td>002</td><td>Schröder</td><td>Düsseldorf</td><td>Test mit Umlauten</td><td>OK</td></tr>
+<tr><td>003</td><td>Meier</td><td>München</td><td>Breiter Tabelleninhalt</td><td>OK</td></tr>
+<tr><td>004</td><td>Fischer</td><td>Vreden</td><td>Kurzer Text</td><td>OK</td></tr>
+<tr><td>005</td><td>Weber</td><td>Berlin</td><td>Weitere Zeile</td><td>OK</td></tr>
+<tr><td>006</td><td>Hoffmann</td><td>Hamburg</td><td>Tabellentest</td><td>OK</td></tr>
+<tr><td>007</td><td>Schäfer</td><td>Bremen</td><td>äöü ÄÖÜ ß</td><td>OK</td></tr>
+<tr><td>008</td><td>König</td><td>Aachen</td><td>Euro-Zeichen €</td><td>OK</td></tr>
+<tr><td>009</td><td>Groß</td><td>Mainz</td><td>Straße, Größe</td><td>OK</td></tr>
+<tr><td>010</td><td>Jäger</td><td>Leipzig</td><td>Letzte Beispielzeile</td><td>OK</td></tr>
+
+</table>
+
+</section>
+
+</body>
+</html>

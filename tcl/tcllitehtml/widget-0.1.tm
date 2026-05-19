@@ -5,6 +5,27 @@ namespace eval ::tcllitehtml {
     variable _widgets  ;# path → {cv}
 }
 
+# ----------------------------------------------------------------
+# Event-Helper (Stufe 2 Fix für Click/Motion mit canvasy)
+# Saubere Helper-Procs vermeiden geschachteltes Quoting in Bindings.
+# ----------------------------------------------------------------
+
+proc ::tcllitehtml::_click_event {path x y} {
+    variable _widgets
+    if {![info exists _widgets($path)]} return
+    set cv [dict get $_widgets($path) cv]
+    set cy [expr {int([$cv canvasy $y])}]
+    catch {tcllitehtml::_click $path $x $cy}
+}
+
+proc ::tcllitehtml::_motion_event {path x y} {
+    variable _widgets
+    if {![info exists _widgets($path)]} return
+    set cv [dict get $_widgets($path) cv]
+    set cy [expr {int([$cv canvasy $y])}]
+    catch {tcllitehtml::_mouse $path $x $cy}
+}
+
 proc ::tcllitehtml::widget {path args} {
     variable _widgets
 
@@ -63,6 +84,11 @@ proc ::tcllitehtml::widget {path args} {
         return -code error "tcllitehtml::_init: $msg"
     }
 
+    # Stufe 2: yscrollcommand direkt auf Canvas — Tk macht das selbst
+    if {$yscrollcmd ne ""} {
+        $path configure -yscrollcommand $yscrollcmd
+    }
+
     # Canvas-Command umbenennen (Fenster bleibt, Delete-Proc läuft nicht)
     set cv "::tcllitehtml::_cv[string map {. _ - _} $path]"
     rename $path $cv
@@ -70,16 +96,15 @@ proc ::tcllitehtml::widget {path args} {
     # Alias anlegen (kein altes Command → kein Delete-Trigger)
     interp alias {} $path {} ::tcllitehtml::_dispatch $path $cv
 
-    # Mausrad an Fenster-Pfad binden (nicht an Command-Name!)
-    bind $path <Button-4>    "catch {tcllitehtml::_scroll [list $path] -30}"
-    bind $path <Button-5>    "catch {tcllitehtml::_scroll [list $path]  30}"
-    bind $path <MouseWheel>  "catch {tcllitehtml::_scroll [list $path] \[expr {-%D/3}]}"
+    # Stufe 2: Mausrad nutzt Tk-natives yview (gratis, kein Re-Render)
+    bind $path <Button-4>    "$cv yview scroll -3 units"
+    bind $path <Button-5>    "$cv yview scroll  3 units"
+    bind $path <MouseWheel>  "$cv yview scroll \[expr {-%D/30}] units"
 
-    # Maus-Klick → on_lbutton_up → on_anchor_click
-    bind $path <Button-1>    "catch {tcllitehtml::_click [list $path] %x %y}"
-
-    # Hover → Cursor ändern, :hover CSS
-    bind $path <Motion>      "catch {tcllitehtml::_mouse [list $path] %x %y}"
+    # Stufe 2 (Fix): Click + Motion via Helper-Proc — vermeidet
+    # geschachteltes Quoting in Bind-Strings
+    bind $path <Button-1>    [list ::tcllitehtml::_click_event  $path %x %y]
+    bind $path <Motion>      [list ::tcllitehtml::_motion_event $path %x %y]
 
     # Resize-Event
     bind $path <Configure>   "::tcllitehtml::_on_configure [list $path] %w %h"
@@ -99,6 +124,11 @@ proc ::tcllitehtml::widget {path args} {
 # Destroy-Handler: C++ State freigeben
 proc ::tcllitehtml::_on_destroy {path} {
     variable _widgets
+    # Stufe 1: ausstehenden Resize-Timer canceln
+    if {[info exists _widgets($path,_resize_after)]} {
+        catch {after cancel $_widgets($path,_resize_after)}
+        unset _widgets($path,_resize_after)
+    }
     catch { tcllitehtml::_destroy $path }
     catch { unset _widgets($path) }
 }
@@ -133,10 +163,11 @@ proc ::tcllitehtml::selection_start {path} {
     set ::tcllitehtml::_sel($path,active) 1
     set ::tcllitehtml::_sel($path,cv) $cv
     $cv configure -cursor crosshair
-    bind $path <Button-1>        [list ::tcllitehtml::_sel_start    $path %x %y]
-    bind $path <B1-Motion>       [list ::tcllitehtml::_sel_drag     $path %x %y]
-    bind $path <ButtonRelease-1> [list ::tcllitehtml::_sel_end      $path %x %y]
-    bind $path <Double-Button-1> [list ::tcllitehtml::_sel_dblclick $path %x %y]
+    # Stufe 2: %y → canvasy weil Selection-Logic Canvas-Items findet
+    bind $path <Button-1>        "::tcllitehtml::_sel_start    [list $path] %x \[$cv canvasy %y]"
+    bind $path <B1-Motion>       "::tcllitehtml::_sel_drag     [list $path] %x \[$cv canvasy %y]"
+    bind $path <ButtonRelease-1> "::tcllitehtml::_sel_end      [list $path] %x \[$cv canvasy %y]"
+    bind $path <Double-Button-1> "::tcllitehtml::_sel_dblclick [list $path] %x \[$cv canvasy %y]"
     bind $path <Escape>          [list ::tcllitehtml::selection_stop $path]
     focus $path
 }
@@ -146,8 +177,8 @@ proc ::tcllitehtml::selection_stop {path} {
     set cv $::tcllitehtml::_sel($path,cv)
     $cv delete sel_rect
     $cv configure -cursor {}
-    # Originale Bindings wiederherstellen
-    bind $path <Button-1>        "catch {tcllitehtml::_click [list $path] %x %y}"
+    # Originale Bindings wiederherstellen (Stufe 2 Fix: Helper-Proc)
+    bind $path <Button-1>        [list ::tcllitehtml::_click_event $path %x %y]
     bind $path <B1-Motion>       {}
     bind $path <ButtonRelease-1> {}
     bind $path <Double-Button-1> {}
@@ -308,12 +339,26 @@ proc ::tcllitehtml::_sel_provide {text offset maxbytes} {
     string range $text $offset [expr {$offset + $maxbytes - 1}]
 }
 
-# Configure-Handler: nur bei echtem Größenwechsel neu rendern
-# (nicht beim ersten Map-Event bevor HTML geladen ist)
+# Configure-Handler: Debounce (Stufe 1) — Resize-Events sammeln,
+# erst 100 ms nach letztem Event rendern
 proc ::tcllitehtml::_on_configure {path w h} {
     variable _widgets
     if {![info exists _widgets($path)]} return
     if {$w < 2 || $h < 2} return   ;# Tk-interne Events ignorieren
+
+    # alten Timer canceln, neuen setzen
+    if {[info exists _widgets($path,_resize_after)]} {
+        catch {after cancel $_widgets($path,_resize_after)}
+    }
+    set _widgets($path,_resize_after) [after 100 \
+        [list ::tcllitehtml::_do_resize $path $w $h]]
+}
+
+# Eigentlicher Resize, jetzt zeitversetzt
+proc ::tcllitehtml::_do_resize {path w h} {
+    variable _widgets
+    unset -nocomplain _widgets($path,_resize_after)
+    if {![info exists _widgets($path)]} return
     try {
         set cur_w [tcllitehtml::_info $path width]
         set cur_h [tcllitehtml::_info $path height]
@@ -348,20 +393,13 @@ proc ::tcllitehtml::_dispatch {path cv sub args} {
             }
         }
         yview {
-            set how [lindex $args 0]
-            set val [lindex $args 1]
-            if {$how eq "scroll"} {
-                set units [lindex $args 2]
-                set dy [expr {$val * ($units eq "pages" ? 300 : 30)}]
-                catch { tcllitehtml::_scroll $path $dy }
-            } elseif {$how eq "moveto"} {
-                # Absolut scrollen via _scrollto (nicht relativ!)
-                # _info PATH key gibt einzelnen Wert zurück
-                set dh 5000
-                catch { set dh [tcllitehtml::_info $path doc_height] }
-                set abs_y [expr {int($val * $dh)}]
-                catch { tcllitehtml::_scrollto $path $abs_y }
+            # Stufe 2: alles an Canvas durchreichen — Tk's natives yview
+            # macht das Scrolling in C, kein Re-Render in tcllitehtml
+            if {[llength $args] == 0} {
+                # yview ohne Args: aktuelle fractions zurückgeben
+                return [$cv yview]
             }
+            $cv yview {*}$args
         }
         configure {
             # Widget-Optionen nachträglich setzen

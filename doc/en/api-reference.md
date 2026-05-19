@@ -1,6 +1,6 @@
 # tcllitehtml API Reference
 
-**Version:** 0.1.0
+**Version:** 0.1.0 (Unreleased — with Stufe 1+2 performance refactor)
 
 ---
 
@@ -21,7 +21,7 @@ Creates an HTML widget (internally a Tk Canvas).
 | `-background COLOR` | color | white | Background color |
 | `-font NAME` | string | Sans/Arial | Default font family |
 | `-fontsize N` | int | 13 | Default font size in pixels |
-| `-yscrollcommand CMD` | callback | "" | Scrollbar callback |
+| `-yscrollcommand CMD` | callback | "" | Scrollbar callback (Tk-native) |
 | `-command CMD` | callback | "" | Link click callback (receives URL) |
 | `-openurl 1` | bool | 0 | Auto-open http links (xdg-open / start) |
 
@@ -53,7 +53,9 @@ PATH load HTML
 PATH load -file PATH
 ```
 
-Loads and renders an HTML string or file.
+Loads and renders an HTML string or file. Triggers a full
+re-render — the entire document is drawn onto the canvas in
+document coordinates.
 
 ```tcl
 .html load {<h1>Hello</h1><p>World</p>}
@@ -71,13 +73,17 @@ PATH yview scroll N units|pages
 Scrolls the widget. Standard Tk scrollbar interface.
 
 ```tcl
-.html yview moveto 0.0     ;# scroll to top (absolute)
+.html yview                ;# returns {first last} fractions
+.html yview moveto 0.0     ;# scroll to top
 .html yview moveto 0.5     ;# scroll to middle
-.html yview scroll 3 units ;# scroll down 3 units (relative)
+.html yview scroll 3 units ;# scroll down 3 units
+.html yview scroll -1 pages;# scroll up one page
 ```
 
-**Note:** `moveto` uses `_scrollto` (absolute positioning) internally —
-Scrollbar drag works correctly. `scroll` uses relative offset.
+**Performance note:** As of the Stufe-2 refactor, `yview` is
+delegated directly to the underlying Tk canvas — no re-render
+happens during scrolling. Each scroll tick is well under 1 ms
+even for large documents. See [performance.md](performance.md).
 
 ### cget
 
@@ -100,8 +106,8 @@ PATH cget OPTION
 set cv [.html cget -canvas]   ;# e.g. ::tcllitehtml::_cv_f_html
 
 # For pdf4tcl: use widget path directly, not $cv!
-# $pdf canvas .f.html   ;# ✔
-# $pdf canvas $cv       ;# ✗ bad window path name
+# $pdf canvas .f.html   ;# OK
+# $pdf canvas $cv       ;# NO — bad window path name
 ```
 
 ### configure
@@ -159,17 +165,30 @@ Selected text is copied to clipboard and X11 PRIMARY selection.
 
 Not normally called directly — used by the widget wrapper.
 
+> **Stufe-2 change:** `_scroll` and `_scrollto` are now state-only
+> commands. They update the C++ `scroll_y` state but **do not**
+> trigger a re-render. Actual scrolling happens via the canvas'
+> native `yview`. The widget wrapper takes care of both sides.
+
+### _scroll
+
+```tcl
+tcllitehtml::_scroll PATH DY
+```
+
+Adjusts the internal `scroll_y` state by `DY` pixels. No re-render.
+The widget wrapper's mouse-wheel bindings call `$cv yview scroll`
+in parallel — this updates `scroll_y` mostly for the `_info` API.
+
 ### _scrollto
 
 ```tcl
 tcllitehtml::_scrollto PATH ABS_Y
 ```
 
-Scrolls to an absolute pixel position. Used internally by `yview moveto`.
-Unlike `_scroll` (which adds a relative offset), `_scrollto` sets
-`scroll_y` directly — required for correct scrollbar drag behavior.
-
----
+Sets `scroll_y` to an absolute pixel position. No re-render. Like
+`_scroll`, mostly used for state tracking; `yview moveto` actually
+moves the canvas.
 
 ### _info
 
@@ -192,7 +211,7 @@ set height     [tcllitehtml::_info .html height]
 tcllitehtml::_setbaseurl PATH URL
 ```
 
-Sets the base URL for relative CSS/image resolution.
+Sets the base URL for relative CSS / image resolution.
 Call before `load` when displaying remote HTML.
 
 ```tcl
@@ -213,9 +232,23 @@ set img [image create photo -file logo.png]
 tcllitehtml::_setimage .html https://example.com/logo.png $img
 ```
 
+### _click / _mouse
+
+```tcl
+tcllitehtml::_click  PATH DOC_X DOC_Y
+tcllitehtml::_mouse  PATH DOC_X DOC_Y
+```
+
+Click and hover events. **Stufe 2:** these expect **document
+coordinates**, not window coordinates. The widget's bindings convert
+the raw `%y` from Tk via `[$canvas canvasy %y]` (and `[expr {int(...)}]`
+to satisfy the strict `Tcl_GetIntFromObj` on the C side). The helper
+procs `::tcllitehtml::_click_event` and `::tcllitehtml::_motion_event`
+in `widget-0.1.tm` encapsulate this conversion.
+
 ---
 
-## PDF Export (1 page)
+## PDF Export
 
 Requires pdf4tcl. Uses the Tk Window Path (not `$cv`):
 
@@ -247,8 +280,12 @@ $pdf write -file output.pdf
 $pdf destroy
 ```
 
-**Note:** Multi-page PDF is not yet supported — the canvas only
-contains the visible area. See `nogit/html-pdf-md-research.md`.
+**Note:** Since Stufe 2 the canvas contains the full document (all
+items in document coordinates), so `[.f.html bbox all]` returns the
+real document bounds — not just the viewport. This makes multi-page
+export plausible: clip the bbox per page and call `$pdf canvas` with
+the matching slice for each page. The shipped `demo-pdf.tcl` still
+does the simple 1-page variant.
 
 ---
 
@@ -256,19 +293,27 @@ contains the visible area. See `nogit/html-pdf-md-research.md`.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Fragment links `#id` | ✗ | Phase 2: `_getpos id` not yet implemented |
-| Multi-page PDF export | ✗ | Canvas only renders visible area |
-| `overflow:hidden` | ✗ | No real clipping in Tk Canvas |
-| CSS gradients | ✗ | First stop color used as fallback |
-| `opacity` | ✗ | Not supported |
-| Flexbox / Grid | ✗ | litehtml limitation |
-| `background-repeat` | ✗ | No tiling |
-| JavaScript | ✗ | Not planned |
-| Forms | ✗ | Phase 3 |
+| Fragment links `#id` | not yet | Phase 2: needs `_getpos id` |
+| Multi-page PDF export | not yet | Possible since Stufe 2 — not implemented in demos |
+| `overflow:hidden` | not supported | No real clipping in Tk Canvas |
+| CSS gradients | not supported | First stop color used as fallback |
+| `opacity` | not supported |   |
+| Flexbox / Grid | not supported | litehtml limitation |
+| `background-repeat` | not supported | No tiling |
+| JavaScript | not supported | Not planned |
+| Forms | not yet | Phase 3 |
 
 ---
 
 ## litehtml Version
 
-Uses `github.com/litehtml/litehtml` master branch (commit `8836bc1`).
-No official version number — master branch.
+Uses `github.com/litehtml/litehtml` master branch. Vendor checkout
+is done by `make litehtml`; pin to a specific commit by setting
+`LITEHTML_REF` if needed.
+
+Two patches are applied automatically:
+
+| File | Fix |
+|------|-----|
+| `src/web_color.cpp` | Remove `resolve_color()` recursion |
+| `include/litehtml/font_description.h` | Initialise `weight`, simplify `hash()` |

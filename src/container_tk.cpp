@@ -29,16 +29,19 @@ ContainerTk::~ContainerTk() {}
 void ContainerTk::begin_draw(int width, int height,
                               int scroll_y, const std::string &bg)
 {
-    if (width != _width || height != _height) _width_cache.clear();
+    /* Stufe 2: width-Änderung invalidiert text-Cache; Höhe ist jetzt
+     * doc-Höhe, nicht Viewport — bei Höhen-Änderung allein nicht
+     * neu messen. */
+    if (width != _width) _width_cache.clear();
     _width = width; _height = height; _scroll_y = scroll_y;
     canvas_eval(_canvas + " delete all");
     _text_log.clear();
-    /* Hintergrund */
+    /* Hintergrund — als ein Rect mit Tag _bg, damit do_draw es
+     * nachträglich auf doc_height vergrößern kann */
     std::string fill = bg.empty() ? "white" : bg;
-    /* Wenn bg = "white" oder #... direkt nehmen */
     canvas_eval(_canvas + " create rectangle 0 0 " +
         std::to_string(width) + " " + std::to_string(height) +
-        " -fill " + fill + " -outline {}");
+        " -fill " + fill + " -outline {} -tags _bg");
 }
 
 void ContainerTk::end_draw() {
@@ -191,8 +194,9 @@ void ContainerTk::draw_text(
     const litehtml::position &pos)
 {
     if (!text || !text[0]) return;
-    int y = pos.y;  /* litehtml: y_offset bereits angewandt */
-    if (y + pos.height < 0 || y > _height) return;
+    int y = pos.y;  /* doc-Koordinate (Stufe 2: kein y-Offset mehr) */
+    /* Kein Clip-Check — Tk's Canvas clippt selbst beim Rendern,
+     * und yview macht das Scrolling */
 
     if (!_interp) return;
     auto it = _fonts.find(hFont);
@@ -235,8 +239,7 @@ void ContainerTk::draw_rect_fill(
 {
     std::string fill = color_to_tk(color);
     if (fill.empty()) return;
-    int y = pos.y;  /* litehtml: bereits screen-Koordinaten */
-    if (y + pos.height < 0 || y > _height) return;
+    int y = pos.y;  /* doc-Koordinate (Stufe 2) */
     canvas_eval(_canvas + " create rectangle " +
         std::to_string(pos.x) + " " + std::to_string(y) + " " +
         std::to_string(pos.x + pos.width) + " " +
@@ -319,7 +322,7 @@ void ContainerTk::draw_list_marker(
     const litehtml::list_marker &marker)
 {
     int y = marker.pos.y;
-    if (y < 0 || y > _height) return;
+    /* Stufe 2: kein Clip — doc-Koordinaten, Tk's Canvas clippt */
     canvas_eval(_canvas + " create oval " +
         std::to_string(marker.pos.x) + " " + std::to_string(y) + " " +
         std::to_string(marker.pos.x + 5) + " " + std::to_string(y + 5) +

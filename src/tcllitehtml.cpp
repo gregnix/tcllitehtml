@@ -39,6 +39,7 @@ struct WidgetState {
     litehtml::document::ptr       doc;
     int   width, height, scroll_y;
     int   doc_height;
+    std::string canvas;                     /* Stufe 2: Canvas-Pfad für yview-Calls */
     std::string bg, html_text, base_url;
     std::string yscrollcmd;
 };
@@ -58,30 +59,44 @@ static int do_draw(WidgetState *ws)
     Tcl_Interp *interp = ws->interp;
     if (!ws->doc || ws->height <= 1) return TCL_OK;
 
+    /* scroll_y nur noch state für InfoCmd, nicht mehr für draw-Offset.
+     * Tk's Canvas yview verwaltet das Scrolling selbst. */
     int max_scroll = ws->doc_height - ws->height;
     if (max_scroll < 0) max_scroll = 0;
     if (ws->scroll_y > max_scroll) ws->scroll_y = max_scroll;
     if (ws->scroll_y < 0) ws->scroll_y = 0;
 
-    ws->container->begin_draw(ws->width, ws->height, ws->scroll_y, ws->bg);
-    /* clip: SCREEN-Koordinaten (0,0,w,h) — Referenz: litebrowser draw_buffer.cpp:
-     * cb_draw(cr, -m_left, -m_top, &pos) mit pos={0,0,width,height} */
-    litehtml::position clip(0, 0, ws->width, ws->height);
+    /* Container im DOC-Koord-System bedienen — kein y-Offset.
+     * begin_draw bekommt doc_height (für _bg-Rect) statt Viewport-Höhe. */
+    ws->container->begin_draw(ws->width, ws->doc_height, 0, ws->bg);
+
+    /* Clip = gesamter DOC-Bereich, damit kein Item geclippt wird */
+    litehtml::position clip(0, 0, ws->width, ws->doc_height);
     ws->doc->draw((litehtml::uint_ptr)ws->container.get(),
-                  0, -ws->scroll_y, &clip);
+                  0, 0, &clip);          /* y=0 statt -scroll_y */
     ws->container->end_draw();
 
-    if (!ws->yscrollcmd.empty()) {
-        double first = (ws->doc_height > 0) ?
-            (double)ws->scroll_y / ws->doc_height : 0.0;
-        double last  = (ws->doc_height > 0) ?
-            (double)(ws->scroll_y + ws->height) / ws->doc_height : 1.0;
-        if (last > 1.0) last = 1.0;
-        char buf[128];
-        snprintf(buf, sizeof(buf), "%s %g %g",
-            ws->yscrollcmd.c_str(), first, last);
-        Tcl_Eval(interp, buf);
+    /* Background-Rect (Tag _bg) auf doc-Höhe vergrößern */
+    {
+        char cmd[256];
+        snprintf(cmd, sizeof(cmd),
+            "%s coords _bg 0 0 %d %d",
+            ws->canvas.c_str(), ws->width, ws->doc_height);
+        Tcl_Eval(interp, cmd);
     }
+
+    /* Scrollregion setzen — Tk's natives yview wird verfügbar */
+    {
+        char cmd[256];
+        snprintf(cmd, sizeof(cmd),
+            "%s configure -scrollregion {0 0 %d %d}",
+            ws->canvas.c_str(), ws->width, ws->doc_height);
+        Tcl_Eval(interp, cmd);
+    }
+
+    /* yscrollcommand machen wir Tk selbst überlassen (über
+     * -yscrollcommand auf dem Canvas, siehe widget.tm).
+     * Der alte hier-im-C++-yscrollcmd-Fallback entfällt. */
     return TCL_OK;
 }
 
@@ -151,6 +166,7 @@ static int InitCmd(ClientData, Tcl_Interp *interp,
     auto ws_ptr = std::make_unique<WidgetState>();
     WidgetState *ws = ws_ptr.get();
     ws->interp     = interp;
+    ws->canvas     = path;                  /* Stufe 2 */
     ws->width      = w;
     ws->height     = h;
     ws->scroll_y   = 0;
@@ -205,7 +221,9 @@ static int ScrollToCmd(ClientData, Tcl_Interp *interp,
     Tcl_GetIntFromObj(interp, objv[2], &abs_y);
     WidgetState *ws = it->second.get();
     ws->scroll_y = abs_y;
-    return do_draw(ws);
+    /* Stufe 2: kein do_draw mehr — Canvas-yview macht das Scrolling.
+     * Tcl-Layer ruft "$canvas yview moveto ..." selbst. */
+    return TCL_OK;
 }
 
 static int ScrollCmd(ClientData, Tcl_Interp *interp,
@@ -217,7 +235,8 @@ static int ScrollCmd(ClientData, Tcl_Interp *interp,
     if (it == g_widgets.end()) return TCL_OK;
     int dy; Tcl_GetIntFromObj(interp, objv[2], &dy);
     it->second.get()->scroll_y += dy;
-    return do_draw(it->second.get());
+    /* Stufe 2: kein do_draw mehr */
+    return TCL_OK;
 }
 
 /* ================================================================== */
@@ -319,15 +338,16 @@ static int SetImageCmd(ClientData, Tcl_Interp *interp,
 }
 
 /* ================================================================== */
-/* tcllitehtml::_click PATH SCREEN_X SCREEN_Y                        */
+/* tcllitehtml::_click PATH DOC_X DOC_Y                              */
 /* Maus-Klick → on_lbutton_up → on_anchor_click                     */
+/* Stufe 2: Tcl-Layer übergibt schon DOC-Koords (via [$cv canvasy]). */
 /* ================================================================== */
 
 static int ClickCmd(ClientData, Tcl_Interp *interp,
                     int objc, Tcl_Obj *const objv[])
 {
     if (objc < 4) {
-        Tcl_WrongNumArgs(interp, 1, objv, "path screen_x screen_y");
+        Tcl_WrongNumArgs(interp, 1, objv, "path doc_x doc_y");
         return TCL_ERROR;
     }
     std::string path = Tcl_GetString(objv[1]);
@@ -336,25 +356,27 @@ static int ClickCmd(ClientData, Tcl_Interp *interp,
     WidgetState *ws = it->second.get();
     if (!ws->doc) return TCL_OK;
 
-    int sx, sy;
-    Tcl_GetIntFromObj(interp, objv[2], &sx);
-    Tcl_GetIntFromObj(interp, objv[3], &sy);
+    int doc_x, doc_y;
+    Tcl_GetIntFromObj(interp, objv[2], &doc_x);
+    Tcl_GetIntFromObj(interp, objv[3], &doc_y);
 
-    /* Dokument-Koordinaten = screen + scroll */
-    int doc_x = sx;
-    int doc_y = sy + ws->scroll_y;
+    /* client_x/y bekommt litehtml für :hover etc. — wir geben einfach
+     * dieselben Werte; da nicht mehr im Viewport-System gerechnet wird,
+     * ist die Unterscheidung kosmetisch */
+    int cx = doc_x;
+    int cy = doc_y;
 
     litehtml::position::vector redraw_boxes;
     /* litehtml braucht down VOR up damit on_anchor_click feuert */
-    ws->doc->on_lbutton_down(doc_x, doc_y, sx, sy, redraw_boxes);
+    ws->doc->on_lbutton_down(doc_x, doc_y, cx, cy, redraw_boxes);
     redraw_boxes.clear();
-    if (ws->doc->on_lbutton_up(doc_x, doc_y, sx, sy, redraw_boxes)) {
+    if (ws->doc->on_lbutton_up(doc_x, doc_y, cx, cy, redraw_boxes)) {
         do_draw(ws);
     }
     return TCL_OK;
 }
 
-/* tcllitehtml::_mouse PATH SCREEN_X SCREEN_Y (für hover) */
+/* tcllitehtml::_mouse PATH DOC_X DOC_Y (für hover) */
 static int MouseCmd(ClientData, Tcl_Interp *interp,
                     int objc, Tcl_Obj *const objv[])
 {
@@ -365,14 +387,14 @@ static int MouseCmd(ClientData, Tcl_Interp *interp,
     WidgetState *ws = it->second.get();
     if (!ws->doc) return TCL_OK;
 
-    int sx, sy;
-    Tcl_GetIntFromObj(interp, objv[2], &sx);
-    Tcl_GetIntFromObj(interp, objv[3], &sy);
-    int doc_x = sx;
-    int doc_y = sy + ws->scroll_y;
+    int doc_x, doc_y;
+    Tcl_GetIntFromObj(interp, objv[2], &doc_x);
+    Tcl_GetIntFromObj(interp, objv[3], &doc_y);
+    int cx = doc_x;
+    int cy = doc_y;
 
     litehtml::position::vector redraw_boxes;
-    if (ws->doc->on_mouse_over(doc_x, doc_y, sx, sy, redraw_boxes)) {
+    if (ws->doc->on_mouse_over(doc_x, doc_y, cx, cy, redraw_boxes)) {
         do_draw(ws);
     }
     return TCL_OK;
